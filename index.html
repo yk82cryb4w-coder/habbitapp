@@ -157,6 +157,8 @@ nav.tabs .spacer{flex:1}
 .fab{position:fixed;right:max(16px,calc(env(safe-area-inset-right,0px) + 16px));bottom:calc(18px + env(safe-area-inset-bottom,0px));z-index:6;border:0;background:var(--accent);color:var(--accent-ink);border-radius:16px;padding:14px 18px;font-weight:700;font-size:15px;box-shadow:0 6px 18px color-mix(in srgb,var(--ink) 25%,transparent)}
 .backup{display:flex;flex-direction:column;gap:10px;margin-top:22px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px}
 .backup .inline{gap:8px}
+.codebox{width:100%;min-height:96px;font-family:var(--f-mono);font-size:11px;border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:8px;resize:vertical;word-break:break-all}
+.ok{color:var(--accent);font-weight:600}
 .loading{color:var(--muted);padding:30px 0;text-align:center}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -397,8 +399,52 @@ function renderAll(){
     (t.length?`<div class="group-h"><span>Задачи</span><span>${t.length}</span></div><div class="list">${t.map(r).join('')}</div>`:'')+backupHTML();
 }
 
+const VAPID='BD2oERSTfD7bImz1cNgnDKCLQP0G-QLjvDvLB5e_PCPc8uc1x-L8yfaZ3VvSZgpGNWAi8vzL1O2bw5Jh5GV2i-U';
+const isStandalone=()=>window.navigator.standalone===true||matchMedia('(display-mode: standalone)').matches;
+const pushSupported=()=>'serviceWorker' in navigator&&'PushManager' in window&&'Notification' in window;
+function b64u(s){const p='='.repeat((4-s.length%4)%4);const b=atob((s+p).replace(/-/g,'+').replace(/_/g,'/'));return Uint8Array.from(b,c=>c.charCodeAt(0))}
+async function fillNotif(showCode){
+  const box=document.getElementById('notifBox');if(!box)return;
+  let h='<div class="group-h" style="margin:0"><span>Уведомления</span></div>';
+  if(!pushSupported()){
+    h+=isStandalone()?'<div class="hint">Этот телефон не поддерживает уведомления от веб-приложений. Нужна iOS 16.4 или новее.</div>'
+      :'<div class="hint">Чтобы включить уведомления, откройте трекер через иконку «Привычки» на экране «Домой».</div>';
+    box.innerHTML=h;return;
+  }
+  let sub=null;try{const reg=await navigator.serviceWorker.ready;sub=await reg.pushManager.getSubscription()}catch(e){}
+  if(Notification.permission==='denied'){
+    h+='<div class="hint">Уведомления запрещены. Включите их: Настройки → Уведомления → Привычки.</div>';
+  }else if(!sub){
+    h+='<div class="hint">Напоминания в 10:00 и 22:00. После включения скопируйте код и вставьте его в GitHub по инструкции.</div><div class="inline"><button class="btn primary" data-act="notif-on">Включить уведомления</button></div>';
+  }else{
+    const code=JSON.stringify(sub);
+    h+='<div class="ok">Уведомления включены на этом телефоне</div>';
+    if(showCode) h+=`<div class="hint">Это код для GitHub (секрет PUSH_SUBSCRIPTION):</div><textarea class="codebox" id="pushCode" readonly>${esc(code)}</textarea>`;
+    h+=`<div class="inline">${showCode?'<button class="btn primary" data-act="notif-copy">Скопировать код</button>':'<button class="btn" data-act="notif-code">Показать код</button>'}<button class="btn ghost" data-act="notif-test">Проверить уведомление</button></div>`;
+  }
+  box.innerHTML=h;
+}
+async function notifOn(){
+  try{
+    const p=await Notification.requestPermission();
+    if(p!=='granted'){toast('Без разрешения уведомления не придут');fillNotif();return}
+    const reg=await navigator.serviceWorker.ready;
+    await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64u(VAPID)});
+    fillNotif(true);toast('Готово. Теперь скопируйте код');
+  }catch(e){toast('Не получилось включить уведомления: '+(e&&e.message||e))}
+}
+async function notifCopy(){
+  const t=document.getElementById('pushCode');if(!t)return;
+  try{await navigator.clipboard.writeText(t.value);toast('Код скопирован')}
+  catch(e){t.focus();t.select();t.setSelectionRange(0,t.value.length);toast('Выделите код и нажмите «Скопировать»')}
+}
+async function notifTest(){
+  try{const reg=await navigator.serviceWorker.ready;await reg.showNotification('Привычки',{body:'Так будут выглядеть напоминания.',icon:'icon-192.png',tag:'test'})}
+  catch(e){toast('Не получилось показать уведомление')}
+}
 function backupHTML(){
-  return `<div class="backup"><div class="group-h" style="margin:0"><span>Резервная копия</span></div>
+  setTimeout(()=>fillNotif(),0);
+  return `<div class="backup" id="notifBox"></div><div class="backup"><div class="group-h" style="margin:0"><span>Резервная копия</span></div>
   <div class="hint">Данные хранятся только на этом телефоне. Время от времени сохраняйте копию в «Файлы», чтобы не потерять отметки при смене телефона.</div>
   <div class="inline"><button class="btn" data-act="export">Сохранить копию</button>
   <label class="btn ghost" for="importFile">Восстановить из копии</label>
@@ -519,6 +565,10 @@ document.addEventListener('click',e=>{
   if(a==='edit')return openEditor(t.dataset.id);
   if(a==='sample')return addSamples();
   if(a==='export')return exportData();
+  if(a==='notif-on')return notifOn();
+  if(a==='notif-code')return fillNotif(true);
+  if(a==='notif-copy')return notifCopy();
+  if(a==='notif-test')return notifTest();
   if(a==='toggle'){const it=clone(S.items[t.dataset.id]);const k=doneKey(it,UI.day);it.done=it.done||{};if(it.done[k])delete it.done[k];else it.done[k]=true;persist(it);return}
   if(a==='day'){const n=+t.dataset.n;UI.day=n===0?today():add(UI.day,n);UI.moved=n!==0;render();return}
   if(a==='week'){const n=+t.dataset.n;UI.week=n===0?wstart(today()):add(UI.week,7*n);render();return}
