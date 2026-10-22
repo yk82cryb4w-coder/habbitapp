@@ -1,0 +1,54 @@
+name: Напоминания
+
+on:
+  schedule:
+    - cron: '0 5 * * *'   # 10:00 по Алматы
+    - cron: '0 17 * * *'  # 22:00 по Алматы
+  workflow_dispatch:      # кнопка «Run workflow» для проверки
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install web-push@3.6.7 --no-save --silent
+      - name: Отправить напоминание
+        env:
+          VAPID_PUBLIC_KEY: 'BD2oERSTfD7bImz1cNgnDKCLQP0G-QLjvDvLB5e_PCPc8uc1x-L8yfaZ3VvSZgpGNWAi8vzL1O2bw5Jh5GV2i-U'
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          PUSH_SUBSCRIPTION: ${{ secrets.PUSH_SUBSCRIPTION }}
+        run: |
+          cat > send.js <<'JS'
+          const webpush = require('web-push');
+          const { VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, PUSH_SUBSCRIPTION } = process.env;
+          if (!VAPID_PRIVATE_KEY || !PUSH_SUBSCRIPTION) {
+            console.error('Не заданы секреты VAPID_PRIVATE_KEY и PUSH_SUBSCRIPTION');
+            process.exit(1);
+          }
+          webpush.setVapidDetails('https://yk82cryb4w-coder.github.io/habbitapp/', VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+          let subs = JSON.parse(PUSH_SUBSCRIPTION);
+          if (!Array.isArray(subs)) subs = [subs];
+          const hour = (new Date().getUTCHours() + 5) % 24; // время в Алматы
+          const msg = hour < 15
+            ? { title: 'Доброе утро', body: 'Посмотри, что запланировано на сегодня.', tag: 'morning' }
+            : { title: 'Как прошёл день?', body: 'Отметь, что получилось сделать сегодня.', tag: 'evening' };
+          (async () => {
+            let failed = false;
+            for (const s of subs) {
+              try {
+                await webpush.sendNotification(s, JSON.stringify(msg), { TTL: 3600, urgency: 'high' });
+                console.log('Отправлено:', msg.title);
+              } catch (e) {
+                failed = true;
+                console.error('Ошибка', e.statusCode, e.body || e.message);
+                if (e.statusCode === 404 || e.statusCode === 410) {
+                  console.error('Подписка устарела: включите уведомления в приложении заново и обновите секрет PUSH_SUBSCRIPTION.');
+                }
+              }
+            }
+            if (failed) process.exit(1);
+          })();
+          JS
+          node send.js
