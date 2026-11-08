@@ -159,6 +159,28 @@ nav.tabs .spacer{flex:1}
 .backup .inline{gap:8px}
 .codebox{width:100%;min-height:96px;font-family:var(--f-mono);font-size:11px;border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:8px;resize:vertical;word-break:break-all}
 .ok{color:var(--accent);font-weight:600}
+.input{font-size:16px}
+.plist{display:flex;flex-direction:column;gap:10px}
+.pday{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;display:flex;flex-direction:column;gap:4px}
+.pday.today{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.pday.weekbox{background:var(--sunk);border-style:dashed}
+.pday h3{margin:0 0 2px;font-size:15px;font-weight:700;display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.pday h3 small{font-family:var(--f-mono);font-size:11px;color:var(--muted);font-weight:400;white-space:nowrap}
+.pday.past h3 span:first-child{color:var(--muted)}
+.badge{font-family:var(--f-mono);font-size:10px;text-transform:uppercase;letter-spacing:.06em;background:var(--accent);color:var(--accent-ink);padding:2px 6px;border-radius:99px;margin-left:6px;vertical-align:2px}
+.prow{display:flex;align-items:flex-start;gap:10px;padding:5px 0}
+.pcheck{flex:none;width:22px;height:22px;border-radius:6px;border:2px solid var(--muted);background:transparent;display:grid;place-items:center;padding:0;margin-top:1px}
+.pcheck svg{width:13px;height:13px;opacity:0}
+.pcheck svg path{stroke:var(--accent-ink)}
+.prow.done .pcheck{background:var(--accent);border-color:var(--accent)}
+.prow.done .pcheck svg{opacity:1}
+.ptext{flex:1;min-width:0;text-align:left;border:0;background:transparent;padding:0;line-height:1.4;overflow-wrap:anywhere}
+.prow.done .ptext{color:var(--muted);text-decoration:line-through}
+.padd{display:flex;gap:6px;margin-top:4px}
+.padd .input{padding:7px 10px;background:var(--bg)}
+.padd .icon-btn{flex:none;height:auto;min-height:36px}
+.pmove{align-self:flex-start;border:0;background:transparent;color:var(--accent);font-weight:600;font-size:13px;padding:4px 0}
+.sundayhint{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;background:color-mix(in srgb,var(--accent) 12%,var(--surface));border:1px solid color-mix(in srgb,var(--accent) 35%,var(--line));border-radius:var(--r);padding:12px 14px;margin-bottom:12px}
 .loading{color:var(--muted);padding:30px 0;text-align:center}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -175,6 +197,7 @@ nav.tabs .spacer{flex:1}
   </header>
   <nav class="tabs" role="tablist">
     <button role="tab" data-tab="today" aria-selected="true">Сегодня</button>
+    <button role="tab" data-tab="plan" aria-selected="false">План</button>
     <button role="tab" data-tab="week" aria-selected="false">Неделя</button>
     <button role="tab" data-tab="all" aria-selected="false">Все</button>
   </nav>
@@ -305,7 +328,86 @@ function render(){
   const T=today();
   $('#sub').textContent=`${DOW_FULL[dow(T)][0].toUpperCase()+DOW_FULL[dow(T)].slice(1)}, ${fmt(T)} · неделя ${isoWeek(T)}`;
   if(S.mode==='loading')return;
-  if(UI.tab==='today')renderToday();else if(UI.tab==='week')renderWeek();else renderAll();
+  $('#fab').hidden=UI.tab==='plan';
+  if(UI.tab==='today')renderToday();else if(UI.tab==='plan')renderPlan();else if(UI.tab==='week')renderWeek();else renderAll();
+}
+
+/* ---------- plans ---------- */
+const LSP=LS+'-plans';
+let P=(()=>{try{const o=JSON.parse(localStorage.getItem(LSP)||'{}');return o&&typeof o==='object'?o:{}}catch(e){return {}}})();
+function pSave(){try{localStorage.setItem(LSP,JSON.stringify(P))}catch(e){toast('Не получилось сохранить план. Освободите место на телефоне.')}}
+const wk=ws=>'w'+key(ws);
+const pList=k=>P[k]||[];
+function pFind(id){for(const k in P){const i=P[k].findIndex(x=>x.id===id);if(i>=0)return [k,i]}return null}
+function pAdd(k,text){(P[k]=P[k]||[]).push({id:newId(),text,done:false});pSave()}
+function pToggle(id){const f=pFind(id);if(!f)return;const x=P[f[0]][f[1]];x.done=!x.done;pSave();render()}
+function pDel(id){const f=pFind(id);if(!f)return;P[f[0]].splice(f[1],1);if(!P[f[0]].length)delete P[f[0]];pSave()}
+function pMove(id,to,text){const f=pFind(id);if(!f)return;const x=P[f[0]][f[1]];if(text!==undefined)x.text=text;if(f[0]===to){pSave();return}
+  P[f[0]].splice(f[1],1);if(!P[f[0]].length)delete P[f[0]];(P[to]=P[to]||[]).push(x);pSave()}
+function pMoveUndone(from,to){const left=[],moved=[];pList(from).forEach(x=>(x.done?left:moved).push(x));if(!moved.length)return 0;
+  if(left.length)P[from]=left;else delete P[from];P[to]=[...pList(to),...moved];pSave();return moved.length}
+function pRow(x){return `<div class="prow ${x.done?'done':''}"><button class="pcheck" data-act="p-toggle" data-id="${x.id}" aria-pressed="${x.done}" aria-label="${x.done?'Снять отметку':'Отметить выполненным'}">${CHECK}</button><button class="ptext" data-act="p-edit" data-id="${x.id}">${esc(x.text)}</button></div>`}
+function pAddForm(k,ph){return `<form class="padd" data-k="${k}"><input class="input" id="add-${k}" maxlength="140" autocomplete="off" enterkeyhint="done" placeholder="${ph||'Добавить задачу'}" aria-label="${ph||'Добавить задачу'}"><button class="icon-btn" type="submit" aria-label="Добавить">+</button></form>`}
+function pCount(k){const l=pList(k);return l.length?`${l.filter(x=>x.done).length}/${l.length}`:''}
+function pDayBox(d,opts={}){
+  const k=key(d),T=key(today()),isT=k===T,past=k<T,l=pList(k);
+  const undone=l.filter(x=>!x.done).length;
+  const name=DOW_FULL[dow(d)][0].toUpperCase()+DOW_FULL[dow(d)].slice(1);
+  return `<section class="pday ${isT?'today':''} ${past?'past':''}">
+    <h3><span>${opts.title||name}${isT&&!opts.title?'<span class="badge">сегодня</span>':''}</span><small>${opts.title?'':fmtS(d)+' · '}${pCount(k)||'пусто'}</small></h3>
+    ${l.map(pRow).join('')}
+    ${past&&undone&&!opts.noMove?`<button class="pmove" data-act="p-carry" data-from="${k}">Перенести невыполненные (${undone}) на сегодня →</button>`:''}
+    ${past&&!opts.title?'':pAddForm(k)}</section>`;
+}
+function pWeekBox(ws,opts={}){
+  const k=wk(ws),l=pList(k),cur=key(wstart(today())),isPast=key(ws)<cur,undone=l.filter(x=>!x.done).length;
+  return `<section class="pday weekbox">
+    <h3><span>${opts.title||'Задачи на неделю'}</span><small>${pCount(k)||'без привязки ко дню'}</small></h3>
+    ${l.map(pRow).join('')}
+    ${isPast&&undone?`<button class="pmove" data-act="p-carryweek" data-from="${k}">Перенести невыполненные (${undone}) на эту неделю →</button>`:''}
+    ${opts.noAdd?'':pAddForm(k,'Задача на неделю')}</section>`;
+}
+function renderPlan(){
+  const ws=UI.week,we=add(ws,6),T=today(),cur=key(wstart(T)),isCur=key(ws)===cur,isNext=key(ws)===key(add(wstart(T),7));
+  let total=0,done=0;[wk(ws),...[0,1,2,3,4,5,6].map(i=>key(add(ws,i)))].forEach(k=>{const l=pList(k);total+=l.length;done+=l.filter(x=>x.done).length});
+  let h=`<div class="daybar">
+    <button class="icon-btn" data-act="week" data-n="-1" aria-label="Предыдущая неделя">‹</button>
+    <div class="label"><b>${isCur?'План на эту неделю':isNext?'План на следующую неделю':'План · неделя '+isoWeek(ws)}</b><span>${fmtS(ws)} – ${fmtS(we)} · ${total?`выполнено ${done} из ${total}`:'задач пока нет'}</span></div>
+    ${isCur?'':'<button class="btn ghost" data-act="week" data-n="0">К текущей</button>'}
+    <button class="icon-btn" data-act="week" data-n="1" aria-label="Следующая неделя">›</button></div>
+    <div class="progress"><i style="width:${total?Math.round(100*done/total):0}%"></i></div>`;
+  if(isCur&&dow(T)>=5) h+=`<div class="sundayhint"><span>Скоро новая неделя. Распишите задачи заранее.</span><button class="btn primary" data-act="week" data-n="1">Планировать следующую →</button></div>`;
+  h+=`<div class="plist">${pWeekBox(ws)}${[0,1,2,3,4,5,6].map(i=>pDayBox(add(ws,i))).join('')}</div>`;
+  view.innerHTML=h;
+}
+function planTodayHTML(d){
+  const ws=wstart(d),wl=pList(wk(ws));
+  return `<div class="group-h"><span>План на день</span><span>${pCount(key(d))}</span></div>
+    <div class="plist">${pDayBox(d,{title:key(d)===key(today())?'Задачи на сегодня':'Задачи на '+fmt(d)})}
+    ${wl.length?pWeekBox(ws,{title:'Ещё на этой неделе',noAdd:true}):''}</div>`;
+}
+let PF=null;
+function openPlanEditor(id){
+  const f=pFind(id);if(!f)return;const x=P[f[0]][f[1]];
+  let ws=f[0][0]==='w'?pk(f[0].slice(1)):wstart(pk(f[0]));
+  PF={id,text:x.text,k:f[0],ws,confirmDel:false};drawPlanEditor();
+}
+function drawPlanEditor(err){
+  const ws=PF.ws,opts=[[wk(ws),'На неделю, без дня'],...[0,1,2,3,4,5,6].map(i=>{const d=add(ws,i);return [key(d),DOW_FULL[i][0].toUpperCase()+DOW_FULL[i].slice(1)+', '+fmtS(d)]}),
+    [wk(add(ws,7)),'Следующая неделя']];
+  $('#modal').innerHTML=`<div class="overlay" data-act="close-bg"><form class="sheet" id="ped" role="dialog" aria-modal="true" aria-labelledby="pedT">
+    <h2 id="pedT">Задача из плана</h2>
+    <div class="field"><label for="pText">Текст</label><input class="input" id="pText" maxlength="140" value="${esc(PF.text)}"></div>
+    <div class="field"><label for="pWhen">Когда</label><select class="input" id="pWhen">${opts.map(([v,l])=>`<option value="${v}" ${v===PF.k?'selected':''}>${l}</option>`).join('')}</select></div>
+    ${err?`<div class="err">${err}</div>`:''}
+    <div class="actions">
+      ${PF.confirmDel?`<button type="button" class="btn danger" data-act="p-del-yes">Точно удалить?</button>`:`<button type="button" class="btn danger" data-act="p-del">Удалить</button>`}
+      <div class="right"><button type="button" class="btn ghost" data-act="close">Отмена</button><button type="submit" class="btn primary">Сохранить</button></div>
+    </div></form></div>`;
+}
+function savePlanEditor(){
+  const t=$('#pText').value.trim();if(!t){PF.text='';return drawPlanEditor('Введите текст задачи.')}
+  pMove(PF.id,$('#pWhen').value,t);closeEditor();render();toast('Сохранено');
 }
 
 function emptyBlock(title,text){
@@ -328,7 +430,7 @@ function rowHTML(it,d){
 
 function renderToday(){
   const d=UI.day,T=today(),items=list();
-  if(!items.length){view.innerHTML=emptyBlock('Пока пусто','Добавьте первую привычку или задачу и выберите, как часто её нужно выполнять.');return}
+  if(!items.length){view.innerHTML=emptyBlock('Пока пусто','Добавьте первую привычку или задачу и выберите, как часто её нужно выполнять.')+planTodayHTML(d);return}
   const due=items.filter(it=>dueOn(it,d));
   const habits=due.filter(i=>i.kind==='habit'),tasks=due.filter(i=>i.kind!=='habit');
   const done=due.filter(it=>isDone(it,d)).length;
@@ -340,9 +442,9 @@ function renderToday(){
     ${isT?'':'<button class="btn ghost" data-act="day" data-n="0">К сегодня</button>'}
     <button class="icon-btn" data-act="day" data-n="1" aria-label="Следующий день">›</button></div>
     <div class="progress"><i style="width:${due.length?Math.round(100*done/due.length):0}%"></i></div>`;
-  if(!due.length) h+=`<div class="empty"><h3>На этот день ничего не запланировано</h3><div>Все привычки и задачи — во вкладке «Все».</div></div>`;
+  if(!due.length) h+=`<div class="empty"><h3>Привычек на этот день нет</h3><div>Все привычки и задачи — во вкладке «Все».</div></div>`;
   const grp=(title,arr)=>arr.length?`<div class="group-h"><span>${title}</span><span>${arr.filter(it=>isDone(it,d)).length}/${arr.length}</span></div><div class="list">${arr.map(it=>rowHTML(it,d)).join('')}</div>`:'';
-  h+=grp('Привычки',habits)+grp('Задачи',tasks);
+  h+=grp('Привычки',habits)+grp('Задачи',tasks)+planTodayHTML(d);
   view.innerHTML=h;
 }
 
@@ -445,14 +547,14 @@ async function notifTest(){
 function backupHTML(){
   setTimeout(()=>fillNotif(),0);
   return `<div class="backup" id="notifBox"></div><div class="backup"><div class="group-h" style="margin:0"><span>Резервная копия</span></div>
-  <div class="hint">Данные хранятся только на этом телефоне. Время от времени сохраняйте копию в «Файлы», чтобы не потерять отметки при смене телефона.</div>
+  <div class="hint">Данные хранятся только на этом телефоне. Время от времени сохраняйте копию в «Файлы», чтобы не потерять отметки и планы при смене телефона.</div>
   <div class="inline"><button class="btn" data-act="export">Сохранить копию</button>
   <label class="btn ghost" for="importFile">Восстановить из копии</label>
   <input type="file" id="importFile" accept="application/json,.json" hidden></div></div>`;
 }
 async function exportData(){
   const name='privychki-'+key(today())+'.json';
-  const text=JSON.stringify({app:'habit-tracker',version:1,exportedAt:new Date().toISOString(),items:S.items},null,1);
+  const text=JSON.stringify({app:'habit-tracker',version:1,exportedAt:new Date().toISOString(),items:S.items,plans:P},null,1);
   const file=new File([text],name,{type:'application/json'});
   try{
     if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],title:name});return}
@@ -465,8 +567,10 @@ function importData(f){
   r.onload=()=>{try{
     const j=JSON.parse(r.result);const items=j&&j.items;
     if(!items||typeof items!=='object')throw 0;
+    let np=0;if(j.plans&&typeof j.plans==='object'){for(const k in j.plans){if(!Array.isArray(j.plans[k]))continue;const have=new Set(pList(k).map(x=>x.id));
+      j.plans[k].forEach(x=>{if(x&&x.id&&typeof x.text==='string'&&!have.has(x.id)){(P[k]=P[k]||[]).push({id:x.id,text:x.text,done:!!x.done});np++}})}pSave()}
     let n=0;Object.values(items).forEach(it=>{if(it&&it.id&&it.name&&it.freq){S.items[it.id]=it;n++}});
-    lsSave();render();toast('Восстановлено записей: '+n);
+    lsSave();render();toast('Восстановлено: привычек и задач '+n+(np?', задач из плана '+np:''));
   }catch(e){toast('Это не файл копии трекера. Выберите файл privychki-….json')}};
   r.readAsText(f);
 }
@@ -525,7 +629,7 @@ function saveEditor(){
   const it={id:F.id||newId(),kind:F.kind,name,color:F.color,start:f.type==='once'?(f.date<F.start?f.date:F.start):F.start,freq,done:F.done||{},createdAt:F.createdAt||Date.now()};
   persist(it);closeEditor();toast(F.id?'Сохранено':'Добавлено');
 }
-function closeEditor(){$('#modal').innerHTML='';F=null}
+function closeEditor(){$('#modal').innerHTML='';F=null;PF=null}
 
 /* ---------- samples ---------- */
 function addSamples(){
@@ -558,6 +662,12 @@ document.addEventListener('click',e=>{
   if(F&&t.dataset.color){readForm();F.color=t.dataset.color;drawEditor();return}
   const a=t.dataset.act;
   if(a==='close-bg'){if(e.target===t)closeEditor();return}
+  if(a==='p-toggle')return pToggle(t.dataset.id);
+  if(a==='p-edit')return openPlanEditor(t.dataset.id);
+  if(a==='p-del'){PF.text=$('#pText').value;PF.confirmDel=true;drawPlanEditor();return}
+  if(a==='p-del-yes'){const id=PF.id;closeEditor();pDel(id);render();toast('Удалено');return}
+  if(a==='p-carry'){const n=pMoveUndone(t.dataset.from,key(today()));render();toast('Перенесено на сегодня: '+n);return}
+  if(a==='p-carryweek'){const n=pMoveUndone(t.dataset.from,wk(wstart(today())));render();toast('Перенесено на эту неделю: '+n);return}
   if(a==='close')return closeEditor();
   if(a==='del'){readForm();F.confirmDel=true;drawEditor();return}
   if(a==='del-yes'){const id=F.id;closeEditor();removeItem(id);toast('Удалено');return}
@@ -573,8 +683,13 @@ document.addEventListener('click',e=>{
   if(a==='day'){const n=+t.dataset.n;UI.day=n===0?today():add(UI.day,n);UI.moved=n!==0;render();return}
   if(a==='week'){const n=+t.dataset.n;UI.week=n===0?wstart(today()):add(UI.week,7*n);render();return}
 });
-document.addEventListener('submit',e=>{if(e.target.id==='ed'){e.preventDefault();saveEditor()}});
-document.addEventListener('keydown',e=>{if(e.key==='Escape'&&F)closeEditor()});
+document.addEventListener('submit',e=>{
+  if(e.target.id==='ed'){e.preventDefault();saveEditor();return}
+  if(e.target.id==='ped'){e.preventDefault();savePlanEditor();return}
+  if(e.target.classList.contains('padd')){e.preventDefault();const k=e.target.dataset.k,inp=e.target.querySelector('input'),v=inp.value.trim();
+    if(!v){inp.focus();return}pAdd(k,v);render();const n=document.getElementById('add-'+k);if(n)n.focus()}
+});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&(F||PF))closeEditor()});
 $('#fab').addEventListener('click',()=>openEditor());
 initStore();
 if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}))}

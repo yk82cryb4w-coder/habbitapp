@@ -1,5 +1,5 @@
 // Офлайн-режим: приложение и шрифты кешируются на телефоне.
-const CACHE = 'privychki-v2';
+const CACHE = 'privychki-v3';
 const FILES = ['./', './index.html', './manifest.json', './apple-touch-icon.png', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
